@@ -6,12 +6,32 @@ const { MongoClient, ObjectId } = require('mongodb');
 const mongoUri = process.env.MONGOURL;
 const dbName = 'gps_tracks';
 
+// Middleware to validate MongoDB connection string
+const validateMongoUri = (req, res, next) => {
+  if (!mongoUri || typeof mongoUri !== 'string') {
+    return res.status(500).json({ error: 'Invalid MongoDB connection configuration' });
+  }
+  next();
+};
+
+// Reusable MongoDB connection function
+async function getMongoClient() {
+  try {
+    const client = await MongoClient.connect(mongoUri, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    return client;
+  } catch (error) {
+    throw new Error(`MongoDB connection failed: ${error.message}`);
+  }
+}
 
 // Get all activities
-router.get('/', async (req, res) => {
+router.get('/', validateMongoUri, async (req, res) => {
   let client;
   try {
-    client = await MongoClient.connect(mongoUri);
+    client = await getMongoClient();
     const db = client.db(dbName);
 
     const activities = await db.collection('activities')
@@ -19,11 +39,10 @@ router.get('/', async (req, res) => {
         .sort({ 'metadata.time': -1 })
         .toArray();
 
-
     res.json(activities);
   } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ error: 'Internal server error' + error });
+    console.error('Error fetching all activities:', error);
+    res.status(500).json({ error: `Internal server error: ${error.message}` });
   } finally {
     if (client) {
       await client.close();
@@ -32,10 +51,10 @@ router.get('/', async (req, res) => {
 });
 
 // Get latest activity
-router.get('/latest', async (req, res) => {
+router.get('/latest', validateMongoUri, async (req, res) => {
   let client;
   try {
-    client = await MongoClient.connect(mongoUri);
+    client = await getMongoClient();
     const db = client.db(dbName);
 
     const activity = await db.collection('activities')
@@ -47,8 +66,8 @@ router.get('/latest', async (req, res) => {
 
     res.json(activity);
   } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Error fetching latest activity:', error);
+    res.status(500).json({ error: `Internal server error: ${error.message}` });
   } finally {
     if (client) {
       await client.close();
@@ -57,14 +76,21 @@ router.get('/latest', async (req, res) => {
 });
 
 // Get activity by ID
-router.get('/:id', async (req, res) => {
+router.get('/:id', validateMongoUri, async (req, res) => {
   let client;
   try {
-    client = await MongoClient.connect(mongoUri);
+    const { id } = req.params;
+
+    // Validate ObjectId format
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid activity ID format' });
+    }
+
+    client = await getMongoClient();
     const db = client.db(dbName);
 
     const activity = await db.collection('activities')
-        .findOne({ _id: new ObjectId(req.params.id) });
+        .findOne({ _id: new ObjectId(id) });
 
     if (!activity) {
       return res.status(404).json({ error: 'Activity not found' });
@@ -72,8 +98,8 @@ router.get('/:id', async (req, res) => {
 
     res.json(activity);
   } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Error fetching activity by ID:', error);
+    res.status(500).json({ error: `Internal server error: ${error.message}` });
   } finally {
     if (client) {
       await client.close();
@@ -82,18 +108,31 @@ router.get('/:id', async (req, res) => {
 });
 
 // Get activities by date range
-router.get('/date-range', async (req, res) => {
+router.get('/date-range', validateMongoUri, async (req, res) => {
   let client;
   try {
     const { startDate, endDate } = req.query;
-    client = await MongoClient.connect(mongoUri);
+
+    // Validate date parameters
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'Both startDate and endDate are required' });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(400).json({ error: 'Invalid date format' });
+    }
+
+    client = await getMongoClient();
     const db = client.db(dbName);
 
     const activities = await db.collection('activities')
         .find({
           'metadata.time': {
-            $gte: new Date(startDate),
-            $lte: new Date(endDate)
+            $gte: start,
+            $lte: end
           }
         })
         .sort({ 'metadata.time': -1 })
@@ -101,8 +140,8 @@ router.get('/date-range', async (req, res) => {
 
     res.json(activities);
   } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Error fetching activities by date range:', error);
+    res.status(500).json({ error: `Internal server error: ${error.message}` });
   } finally {
     if (client) {
       await client.close();
@@ -111,23 +150,29 @@ router.get('/date-range', async (req, res) => {
 });
 
 // Get activities by type
-router.get('/by-type/:type', async (req, res) => {
+router.get('/by-type/:type', validateMongoUri, async (req, res) => {
   let client;
   try {
-    client = await MongoClient.connect(mongoUri);
+    const { type } = req.params;
+
+    if (!type || typeof type !== 'string') {
+      return res.status(400).json({ error: 'Valid activity type is required' });
+    }
+
+    client = await getMongoClient();
     const db = client.db(dbName);
 
     const activities = await db.collection('activities')
         .find({
-          'track.type': req.params.type
+          'track.type': type
         })
         .sort({ 'metadata.time': -1 })
         .toArray();
 
     res.json(activities);
   } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Error fetching activities by type:', error);
+    res.status(500).json({ error: `Internal server error: ${error.message}` });
   } finally {
     if (client) {
       await client.close();
