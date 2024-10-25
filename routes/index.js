@@ -6,6 +6,7 @@ const { MongoClient, ObjectId } = require('mongodb');
 const mongoUri = 'mongodb://localhost:27017';
 const dbName = 'gps_tracks';
 
+
 // Get all activities
 router.get('/', async (req, res) => {
   let client;
@@ -18,10 +19,11 @@ router.get('/', async (req, res) => {
         .sort({ 'metadata.time': -1 })
         .toArray();
 
+
     res.json(activities);
   } catch (error) {
     console.error('Error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error' + error });
   } finally {
     if (client) {
       await client.close();
