@@ -5,7 +5,6 @@ const { MongoClient, ObjectId } = require('mongodb');
 // MongoDB connection configuration
 const mongoUri = process.env.MONGOURL;
 const dbName = 'gps_tracks';
-console.log('MongoDB URI:', mongoUri); // Add this for debugging
 
 // Middleware to validate MongoDB connection string
 const validateMongoUri = (req, res, next) => {
