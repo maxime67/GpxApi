@@ -3,7 +3,7 @@ const router = express.Router();
 const { MongoClient, ObjectId } = require('mongodb');
 
 // MongoDB connection configuration
-const mongoUri = 'mongodb://localhost:27017';
+const mongoUri = process.env.MONGOURL;
 const dbName = 'gps_tracks';
 
 
