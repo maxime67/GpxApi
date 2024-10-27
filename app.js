@@ -7,7 +7,8 @@ const fs = require('fs');
 const winston = require('winston');
 require('dotenv').config();
 
-const indexRouter = require('./routes/index');
+const gpxRouter = require('./routes/gpx');
+const elecRouter = require('./routes/elec');
 const app = express();
 
 // Create logs directory if it doesn't exist
@@ -86,7 +87,8 @@ app.use(cors({
 }));
 
 // Routes
-app.use('/', indexRouter);
+app.use('/gpx', gpxRouter);
+app.use('/elec', elecRouter);
 
 // Enhanced error handler with logging
 app.use((err, req, res, next) => {
