@@ -13,10 +13,14 @@ const elecRouter = require('./routes/elec');
 const { createServer } = require("node:https");
 const app = express();
 console.log(__dirname + "/certificates" + "privkey.pem")
-const sslOptions = {
-  key: fs.readFileSync(path.join(__dirname, 'certificates', 'privkey.pem')),
-  cert: fs.readFileSync(path.join(__dirname, 'certificates', 'fullchain.pem')),
-};
+if (process.env.env !== "production") {
+  const sslOptions = {};
+} else {
+  const sslOptions = {
+    key: fs.readFileSync(path.join(__dirname, 'certificates/', 'privkey.pem')),
+    cert: fs.readFileSync(path.join(__dirname, 'certificates/', 'fullchain.pem')),
+  };
+}
 
 const PORT = 3000;
 let server = null;
@@ -117,7 +121,11 @@ const startServer = async (retries = 3) => {
       }
 
       // Create and start the server
-      server = createServer(sslOptions, app);
+      if(process.env.env !== 'production') {
+        server = createServer(app);
+      } else {
+        server = createServer(sslOptions, app);
+      }
 
       await new Promise((resolve, reject) => {
         server.listen(PORT, () => {
