@@ -5,7 +5,6 @@ const logger = require('morgan');
 const cors = require('cors');
 const fs = require('fs');
 const winston = require('winston');
-const net = require('net');
 require('dotenv').config();
 
 const gpxRouter = require('./routes/gpx');
@@ -57,74 +56,15 @@ const winstonLogger = winston.createLogger({
     ]
 });
 
-// Function to forcefully clean up port
-const cleanupPort = () => {
-    return new Promise((resolve) => {
-        if (server) {
-            server.close(() => {
-                server = null;
-                resolve();
-            });
-        } else {
-            // Create a temporary server to force port release
-            const tempServer = net.createServer();
-            tempServer.listen(PORT, () => {
-                tempServer.close(() => {
-                    resolve();
-                });
-            });
-            tempServer.on('error', () => {
-                resolve();
-            });
-        }
-    });
-};
-
 // Function to wait
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Function to check if port is actually free
-const isPortFree = () => {
-    return new Promise((resolve) => {
-        const tempServer = net.createServer()
-            .once('error', () => {
-                tempServer.close();
-                resolve(false);
-            })
-            .once('listening', () => {
-                tempServer.close();
-                resolve(true);
-            })
-            .listen(PORT);
-    });
-};
 
 // Start server with retries
 const startServer = async (retries = 3) => {
     for (let i = 0; i < retries; i++) {
         try {
-            // First, attempt to cleanup any existing connections
-            await cleanupPort();
-
-            // Wait a bit to ensure cleanup is complete
-            await wait(1000);
-
-            // Check if port is actually free
-            const portFree = await isPortFree();
-            if (!portFree) {
-                winstonLogger.error(`Port ${PORT} is still in use after cleanup attempt ${i + 1}`);
-                if (i === retries - 1) {
-                    process.exit(1);
-                }
-                continue;
-            }
-
-            // Create and start the server
-            if (process.env.env !== 'production') {
-                server = createServer(app);
-            } else {
-                server = createServer(sslOptions, app);
-            }
+            server = createServer(sslOptions, app);
 
             await new Promise((resolve, reject) => {
                 server.listen(PORT, () => {
@@ -158,7 +98,6 @@ const startServer = async (retries = 3) => {
     }
 };
 
-// Middleware and routes setup...
 app.use(logger('combined', {stream: fs.createWriteStream(path.join(logsDir, 'access.log'), {flags: 'a'})}));
 app.use(express.json());
 app.use(express.urlencoded({extended: false}));
