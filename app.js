@@ -18,7 +18,7 @@ const sslOptions = {
   cert: fs.readFileSync(path.join(__dirname, 'certificates', 'fullchain.pem')),
 };
 
-const PORT = 3000;
+const PORT = 3024;
 let server = null;
 
 // Configure Winston logger
