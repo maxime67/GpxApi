@@ -8,7 +8,27 @@ const winston = require('winston');
 require('dotenv').config();
 
 const indexRouter = require('./routes/index');
+const {createServer} = require("node:https");
 const app = express();
+
+const sslOptions = {
+  key: fs.readFileSync(path.join(__dirname, 'certificates', 'fullchain.pem')),
+  cert: fs.readFileSync(path.join(__dirname, 'certificates', 'privkey.pem')),
+};
+const PORT = process.env.PORT || 3000;
+const httpsServer = createServer(sslOptions, app);
+
+httpsServer.listen(PORT, () => {
+  console.log(`Secure server running on port ${PORT}`);
+}).on('error', (err) => {
+  if (err.code === 'EACCES') {
+    console.error(`Port ${PORT} requires elevated privileges`);
+  } else if (err.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} is already in use`);
+  } else {
+    console.error('An error occurred:', err);
+  }
+});
 
 // Create logs directory if it doesn't exist
 const logsDir = path.join(__dirname, 'logs');
