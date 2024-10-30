@@ -11,14 +11,15 @@ const gpxRouter = require('./routes/gpx');
 const elecRouter = require('./routes/elec');
 const {createServer} = require("node:https");
 const app = express();
-console.log(__dirname + "/certificates" + "privkey.pem")
 
 const sslOptions = {
-    key: fs.readFileSync(path.join(__dirname, 'certificates/', 'privkey.pem')),
-    cert: fs.readFileSync(path.join(__dirname, 'certificates/', 'fullchain.pem')),
-    secureProtocol: 'TLS_method',
+    // key: fs.readFileSync(path.join(__dirname, 'certificates/', 'privkey.pem')),
+    // cert: fs.readFileSync(path.join(__dirname, 'certificates/', 'fullchain.pem')),
+    // secureProtocol: 'TLS_method',
 };
 
+var privateKey = fs.readFileSync( 'certificates/privkey.pem' );
+var certificate = fs.readFileSync( 'certificates/fullchain.pem' );
 
 const PORT = 3000;
 let server = null;
@@ -61,42 +62,42 @@ const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 
 // Start server with retries
-const startServer = async (retries = 3) => {
-    for (let i = 0; i < retries; i++) {
-        try {
-            server = createServer(sslOptions, app);
-
-            await new Promise((resolve, reject) => {
-                server.listen(PORT, () => {
-                    winstonLogger.info(`Secure server running on port ${PORT}`);
-                    resolve();
-                });
-
-                server.once('error', (err) => {
-                    if (err.code === 'EADDRINUSE') {
-                        winstonLogger.error(`Port ${PORT} is already in use - attempt ${i + 1}`);
-                        reject(err);
-                    } else {
-                        winstonLogger.error(`Server error: ${err.message}`);
-                        reject(err);
-                    }
-                });
-            });
-
-            // If we got here, server started successfully
-            return;
-
-        } catch (error) {
-            winstonLogger.error(`Server start attempt ${i + 1} failed:`, error);
-            await wait(2000); // Wait before retry
-
-            if (i === retries - 1) {
-                winstonLogger.error('All server start attempts failed');
-                process.exit(1);
-            }
-        }
-    }
-};
+// const startServer = async (retries = 3) => {
+//     for (let i = 0; i < retries; i++) {
+//         try {
+//             server = createServer(sslOptions, app);
+//
+//             await new Promise((resolve, reject) => {
+//                 server.listen(PORT, () => {
+//                     winstonLogger.info(`Secure server running on port ${PORT}`);
+//                     resolve();
+//                 });
+//
+//                 server.once('error', (err) => {
+//                     if (err.code === 'EADDRINUSE') {
+//                         winstonLogger.error(`Port ${PORT} is already in use - attempt ${i + 1}`);
+//                         reject(err);
+//                     } else {
+//                         winstonLogger.error(`Server error: ${err.message}`);
+//                         reject(err);
+//                     }
+//                 });
+//             });
+//
+//             // If we got here, server started successfully
+//             return;
+//
+//         } catch (error) {
+//             winstonLogger.error(`Server start attempt ${i + 1} failed:`, error);
+//             await wait(2000); // Wait before retry
+//
+//             if (i === retries - 1) {
+//                 winstonLogger.error('All server start attempts failed');
+//                 process.exit(1);
+//             }
+//         }
+//     }
+// };
 
 app.use(logger('combined', {stream: fs.createWriteStream(path.join(logsDir, 'access.log'), {flags: 'a'})}));
 app.use(express.json());
@@ -119,13 +120,7 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use(cors({
-    origin: function (origin, callback) {
-        winstonLogger.debug(`CORS request from origin: ${origin}`);
-        callback(null, true);
-    },
-    credentials: true
-}));
+app.use(cors());
 
 app.use('/gpx', gpxRouter);
 app.use('/elec', elecRouter);
@@ -151,7 +146,10 @@ process.on('unhandledRejection', (reason, promise) => {
     winstonLogger.error('Unhandled Rejection:', {reason, promise});
     gracefulShutdown();
 });
-
+createServer({
+    key: privateKey,
+    cert: certificate
+}, app).listen(3000);
 // Start the server
 // startServer();
 
