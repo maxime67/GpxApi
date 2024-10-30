@@ -13,8 +13,8 @@ const {createServer} = require("node:https");
 const app = express();
 
 const sslOptions = {
-  key: fs.readFileSync(path.join(__dirname, 'certificates', 'fullchain.pem')),
-  cert: fs.readFileSync(path.join(__dirname, 'certificates', 'privkey.pem')),
+  key: fs.readFileSync(path.join(__dirname, 'certificates', 'privkey.pem')),
+  cert: fs.readFileSync(path.join(__dirname, 'certificates', 'fullchain.pem')),
 };
 const PORT = process.env.PORT || 3000;
 const httpsServer = createServer(sslOptions, app);
