@@ -16,7 +16,7 @@ const sslOptions = {
   key: fs.readFileSync(path.join(__dirname, 'certificates', 'privkey.pem')),
   cert: fs.readFileSync(path.join(__dirname, 'certificates', 'fullchain.pem')),
 };
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3024;
 const httpsServer = createServer(sslOptions, app);
 
 httpsServer.listen(PORT, () => {
