@@ -7,7 +7,8 @@ const fs = require('fs');
 const winston = require('winston');
 require('dotenv').config();
 
-const indexRouter = require('./routes/index');
+const gpxRouter = require('./routes/gpx');
+const elecRouter = require('./routes/elec');
 const {createServer} = require("node:https");
 const app = express();
 
@@ -106,7 +107,8 @@ app.use(cors({
 }));
 
 // Routes
-app.use('/', indexRouter);
+app.use('/gpx', gpxRouter);
+app.use('/elec', elecRouter);
 
 // Enhanced error handler with logging
 app.use((err, req, res, next) => {
