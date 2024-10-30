@@ -18,27 +18,13 @@ const sslOptions = {
 };
 
 const PORT = 3000;
-const httpsServer = createServer(sslOptions, app);
 
-httpsServer.listen(PORT, () => {
-  console.log(`Secure server running on port ${PORT}`);
-}).on('error', (err) => {
-  if (err.code === 'EACCES') {
-    console.error(`Port ${PORT} requires elevated privileges`);
-  } else if (err.code === 'EADDRINUSE') {
-    console.error(`Port ${PORT} is already in use`);
-  } else {
-    console.error('An error occurred:', err);
-  }
-});
-
-// Create logs directory if it doesn't exist
+// Configure Winston logger first
 const logsDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir);
 }
 
-// Configure Winston logger
 const winstonLogger = winston.createLogger({
   level: 'debug',
   format: winston.format.combine(
@@ -46,20 +32,17 @@ const winstonLogger = winston.createLogger({
       winston.format.json()
   ),
   transports: [
-    // Write to all logs with level 'info' and below to combined.log
     new winston.transports.File({
       filename: path.join(logsDir, 'combined.log'),
-      maxsize: 5242880, // 5MB
+      maxsize: 5242880,
       maxFiles: 5,
     }),
-    // Write all logs error (and below) to error.log
     new winston.transports.File({
       filename: path.join(logsDir, 'error.log'),
       level: 'error',
-      maxsize: 5242880, // 5MB
+      maxsize: 5242880,
       maxFiles: 5,
     }),
-    // Console output
     new winston.transports.Console({
       format: winston.format.combine(
           winston.format.colorize(),
@@ -68,6 +51,58 @@ const winstonLogger = winston.createLogger({
     })
   ]
 });
+
+// Function to check if port is in use
+const checkPort = (port) => {
+  return new Promise((resolve, reject) => {
+    const tempServer = require('net').createServer()
+    tempServer.once('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        resolve(true);
+      } else {
+        reject(err);
+      }
+    });
+    tempServer.once('listening', () => {
+      tempServer.close();
+      resolve(false);
+    });
+    tempServer.listen(port);
+  });
+};
+
+// Start server with port check
+const startServer = async () => {
+  try {
+    const isPortInUse = await checkPort(PORT);
+    if (isPortInUse) {
+      winstonLogger.error(`Port ${PORT} is already in use`);
+      process.exit(1); // Exit with error code
+    }
+
+    const httpsServer = createServer(sslOptions, app);
+    httpsServer.listen(PORT, () => {
+      winstonLogger.info(`Secure server running on port ${PORT}`);
+    });
+
+    httpsServer.on('error', (err) => {
+      if (err.code === 'EACCES') {
+        winstonLogger.error(`Port ${PORT} requires elevated privileges`);
+        process.exit(1);
+      } else if (err.code === 'EADDRINUSE') {
+        winstonLogger.error(`Port ${PORT} is already in use`);
+        process.exit(1);
+      } else {
+        winstonLogger.error('An error occurred:', err);
+        process.exit(1);
+      }
+    });
+
+  } catch (error) {
+    winstonLogger.error('Server startup error:', error);
+    process.exit(1);
+  }
+};
 
 // Create a write stream for Morgan
 const accessLogStream = fs.createWriteStream(
@@ -126,10 +161,26 @@ app.use((err, req, res, next) => {
 // Process error handling
 process.on('uncaughtException', (error) => {
   winstonLogger.error('Uncaught Exception:', error);
+  process.exit(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   winstonLogger.error('Unhandled Rejection:', { reason, promise });
+  process.exit(1);
 });
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  winstonLogger.info('SIGTERM received. Performing graceful shutdown...');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  winstonLogger.info('SIGINT received. Performing graceful shutdown...');
+  process.exit(0);
+});
+
+// Start the server
+startServer();
 
 module.exports = app;
