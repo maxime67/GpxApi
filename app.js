@@ -19,6 +19,7 @@ if (process.env.env !== "production") {
   const sslOptions = {
     key: fs.readFileSync(path.join(__dirname, 'certificates/', 'privkey.pem')),
     cert: fs.readFileSync(path.join(__dirname, 'certificates/', 'fullchain.pem')),
+    secureProtocol: 'TLS_method',
   };
 }
 
