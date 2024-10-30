@@ -12,13 +12,13 @@ const gpxRouter = require('./routes/gpx');
 const elecRouter = require('./routes/elec');
 const { createServer } = require("node:https");
 const app = express();
-
+console.log(__dirname + "/certificates" + "privkey.pem")
 const sslOptions = {
   key: fs.readFileSync(path.join(__dirname, 'certificates', 'privkey.pem')),
   cert: fs.readFileSync(path.join(__dirname, 'certificates', 'fullchain.pem')),
 };
 
-const PORT = 3024;
+const PORT = 3000;
 let server = null;
 
 // Configure Winston logger
