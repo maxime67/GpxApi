@@ -9,14 +9,15 @@ require('dotenv').config();
 
 const gpxRouter = require('./routes/gpx');
 const elecRouter = require('./routes/elec');
-const {createServer} = require("node:https");
+const { createServer } = require("node:https");
 const app = express();
 
 const sslOptions = {
   key: fs.readFileSync(path.join(__dirname, 'certificates', 'privkey.pem')),
   cert: fs.readFileSync(path.join(__dirname, 'certificates', 'fullchain.pem')),
 };
-const PORT = process.env.PORT || 3024;
+
+const PORT = 3000;
 const httpsServer = createServer(sslOptions, app);
 
 httpsServer.listen(PORT, () => {
