@@ -153,6 +153,6 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // Start the server
-startServer();
+// startServer();
 
 module.exports = app;
