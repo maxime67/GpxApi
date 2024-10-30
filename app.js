@@ -5,6 +5,7 @@ const logger = require('morgan');
 const cors = require('cors');
 const fs = require('fs');
 const winston = require('winston');
+const net = require('net');
 require('dotenv').config();
 
 const gpxRouter = require('./routes/gpx');
@@ -18,8 +19,9 @@ const sslOptions = {
 };
 
 const PORT = 3000;
+let server = null;
 
-// Configure Winston logger first
+// Configure Winston logger
 const logsDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir);
@@ -52,72 +54,110 @@ const winstonLogger = winston.createLogger({
   ]
 });
 
-// Function to check if port is in use
-const checkPort = (port) => {
-  return new Promise((resolve, reject) => {
-    const tempServer = require('net').createServer()
-    tempServer.once('error', (err) => {
-      if (err.code === 'EADDRINUSE') {
-        resolve(true);
-      } else {
-        reject(err);
-      }
-    });
-    tempServer.once('listening', () => {
-      tempServer.close();
-      resolve(false);
-    });
-    tempServer.listen(port);
+// Function to forcefully clean up port
+const cleanupPort = () => {
+  return new Promise((resolve) => {
+    if (server) {
+      server.close(() => {
+        server = null;
+        resolve();
+      });
+    } else {
+      // Create a temporary server to force port release
+      const tempServer = net.createServer();
+      tempServer.listen(PORT, () => {
+        tempServer.close(() => {
+          resolve();
+        });
+      });
+      tempServer.on('error', () => {
+        resolve();
+      });
+    }
   });
 };
 
-// Start server with port check
-const startServer = async () => {
-  try {
-    const isPortInUse = await checkPort(PORT);
-    if (isPortInUse) {
-      winstonLogger.error(`Port ${PORT} is already in use`);
-      process.exit(1); // Exit with error code
-    }
+// Function to wait
+const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-    const httpsServer = createServer(sslOptions, app);
-    httpsServer.listen(PORT, () => {
-      winstonLogger.info(`Secure server running on port ${PORT}`);
-    });
+// Function to check if port is actually free
+const isPortFree = () => {
+  return new Promise((resolve) => {
+    const tempServer = net.createServer()
+        .once('error', () => {
+          tempServer.close();
+          resolve(false);
+        })
+        .once('listening', () => {
+          tempServer.close();
+          resolve(true);
+        })
+        .listen(PORT);
+  });
+};
 
-    httpsServer.on('error', (err) => {
-      if (err.code === 'EACCES') {
-        winstonLogger.error(`Port ${PORT} requires elevated privileges`);
-        process.exit(1);
-      } else if (err.code === 'EADDRINUSE') {
-        winstonLogger.error(`Port ${PORT} is already in use`);
-        process.exit(1);
-      } else {
-        winstonLogger.error('An error occurred:', err);
+// Start server with retries
+const startServer = async (retries = 3) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      // First, attempt to cleanup any existing connections
+      await cleanupPort();
+
+      // Wait a bit to ensure cleanup is complete
+      await wait(1000);
+
+      // Check if port is actually free
+      const portFree = await isPortFree();
+      if (!portFree) {
+        winstonLogger.error(`Port ${PORT} is still in use after cleanup attempt ${i + 1}`);
+        if (i === retries - 1) {
+          process.exit(1);
+        }
+        continue;
+      }
+
+      // Create and start the server
+      server = createServer(sslOptions, app);
+
+      await new Promise((resolve, reject) => {
+        server.listen(PORT, () => {
+          winstonLogger.info(`Secure server running on port ${PORT}`);
+          resolve();
+        });
+
+        server.once('error', (err) => {
+          if (err.code === 'EADDRINUSE') {
+            winstonLogger.error(`Port ${PORT} is already in use - attempt ${i + 1}`);
+            reject(err);
+          } else {
+            winstonLogger.error(`Server error: ${err.message}`);
+            reject(err);
+          }
+        });
+      });
+
+      // If we got here, server started successfully
+      return;
+
+    } catch (error) {
+      winstonLogger.error(`Server start attempt ${i + 1} failed:`, error);
+      await wait(2000); // Wait before retry
+
+      if (i === retries - 1) {
+        winstonLogger.error('All server start attempts failed');
         process.exit(1);
       }
-    });
-
-  } catch (error) {
-    winstonLogger.error('Server startup error:', error);
-    process.exit(1);
+    }
   }
 };
 
-// Create a write stream for Morgan
-const accessLogStream = fs.createWriteStream(
-    path.join(logsDir, 'access.log'),
-    { flags: 'a' }
-);
-
-// Middleware
-app.use(logger('combined', { stream: accessLogStream }));
+// Middleware and routes setup...
+app.use(logger('combined', { stream: fs.createWriteStream(path.join(logsDir, 'access.log'), { flags: 'a' }) }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Add request logging middleware
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
@@ -133,7 +173,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// CORS configuration with logging
 app.use(cors({
   origin: function(origin, callback) {
     winstonLogger.debug(`CORS request from origin: ${origin}`);
@@ -142,42 +181,29 @@ app.use(cors({
   credentials: true
 }));
 
-// Routes
 app.use('/gpx', gpxRouter);
 app.use('/elec', elecRouter);
 
-// Enhanced error handler with logging
-app.use((err, req, res, next) => {
-  winstonLogger.error({
-    message: err.message,
-    stack: err.stack,
-    method: req.method,
-    url: req.url,
-    ip: req.ip
-  });
-  res.status(500).send('Something broke!');
-});
+// Graceful shutdown handler
+const gracefulShutdown = async () => {
+  winstonLogger.info('Received shutdown signal. Closing server...');
+  if (server) {
+    await new Promise(resolve => server.close(resolve));
+    winstonLogger.info('Server closed successfully');
+  }
+  process.exit(0);
+};
 
-// Process error handling
+// Process handlers
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
 process.on('uncaughtException', (error) => {
   winstonLogger.error('Uncaught Exception:', error);
-  process.exit(1);
+  gracefulShutdown();
 });
-
 process.on('unhandledRejection', (reason, promise) => {
   winstonLogger.error('Unhandled Rejection:', { reason, promise });
-  process.exit(1);
-});
-
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  winstonLogger.info('SIGTERM received. Performing graceful shutdown...');
-  process.exit(0);
-});
-
-process.on('SIGINT', () => {
-  winstonLogger.info('SIGINT received. Performing graceful shutdown...');
-  process.exit(0);
+  gracefulShutdown();
 });
 
 // Start the server
